@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using System.Windows.Automation;
 using AutoLoginTest;
+using AutoLoginTest.Config;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -25,8 +26,9 @@ builder.ConfigureLogging((context, loggingBuilder) =>
     loggingBuilder.AddSerilog();
 });
 
-builder.ConfigureServices((_, services) =>
+builder.ConfigureServices((context, services) =>
 {
+    services.AddOptions<AutoLoginConfiguration>().Bind(context.Configuration.GetSection("AutoLogin"));
     services.AddHostedService<ProcessesMonitor>();
 });
 
