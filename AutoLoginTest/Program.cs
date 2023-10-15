@@ -1,54 +1,90 @@
 ﻿// https://stackoverflow.com/questions/40241044/detect-when-a-specific-window-in-another-process-opens-or-closes
 
-using System.Runtime.InteropServices;
-using System.Text;
+using System.Diagnostics;
 using System.Windows.Automation;
+using AutoLoginTest;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Serilog;
 
-const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
-const uint EVENT_OBJECT_DESTROY = 0x8001;
-const uint WINEVENT_OUTOFCONTEXT = 0;
+var builder = Host.CreateDefaultBuilder(args);
 
-[DllImport("user32.dll")]
-static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr
-        hmodWinEventProc, WinEventDelegate lpfnWinEventProc, uint idProcess,
-    uint idThread, uint dwFlags);
-
-[DllImport("user32.dll")]
-static extern bool UnhookWinEvent(IntPtr hWinEventHook);
-
-[DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
-
-System.Diagnostics.Process[] processes = System.Diagnostics.Process.GetProcesses();
-foreach (System.Diagnostics.Process p in processes)
+builder.ConfigureAppConfiguration((_, configurationBuilder) =>
 {
-    if (p.MainWindowTitle.Contains("QUIK"))
-    {
-        var quikElement = AutomationElement.FromHandle(p.MainWindowHandle);
-        Automation.AddAutomationEventHandler(
-            WindowPattern.WindowOpenedEvent, quikElement,
-            TreeScope.Subtree, (s1, e1) =>
-            {
-                var element = s1 as AutomationElement;
-                if (element.Current.Name.Contains("пользователя"))
-                {
-                    //Page setup opened.
-                    // this.Invoke(new Action(() => { this.Text = "Page Setup Opened"; }));
-                    // Automation.AddAutomationEventHandler(
-                    //     WindowPattern.WindowClosedEvent, element,
-                    //     TreeScope.Subtree, (s2, e2) =>
-                    //     {
-                    //         //Page setup closed.
-                    //         this.Invoke(new Action(() => { this.Text = "Closed"; }));
-                    //     });
-                }
-            });
+    configurationBuilder.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+});
 
-        break;
-    }
-}
+builder.ConfigureLogging((context, loggingBuilder) =>
+{
+    Log.Logger = new LoggerConfiguration()
+        .ReadFrom.Configuration(context.Configuration)
+        .CreateLogger();
+    loggingBuilder.ClearProviders();
+    loggingBuilder.AddSerilog();
+});
+
+builder.ConfigureServices((_, services) =>
+{
+    services.AddHostedService<ProcessesMonitor>();
+});
+
+builder.Build().Run();
+
+var quikProc = GetQuikProcess();
+var quikMainWindow = AutomationElement.FromHandle(quikProc.MainWindowHandle);
+
+Automation.AddAutomationEventHandler(
+    WindowPattern.WindowOpenedEvent, quikMainWindow,
+    TreeScope.Subtree, (s, _) =>
+    {
+
+        var loginWindow = s as AutomationElement;
+        if (loginWindow.Current.Name.Contains("пользователя"))
+        {
+            var inputsLookupCondition = new PropertyCondition(
+                AutomationElement.ClassNameProperty, "Edit", PropertyConditionFlags.IgnoreCase);
+            var inputs = loginWindow.FindAll(TreeScope.Element | TreeScope.Children, inputsLookupCondition);
+
+            var buttonsLookupCondition = new PropertyCondition(
+                AutomationElement.NameProperty, "Вход", PropertyConditionFlags.IgnoreCase);
+            var loginButton = loginWindow.FindFirst(TreeScope.Element | TreeScope.Children, buttonsLookupCondition);
+
+            var loginInput = inputs[0];
+            var passInput = inputs[1];
+
+            loginInput.SetFocus();
+            SendKeys.SendWait("^{HOME}");
+            SendKeys.SendWait("^+{END}"); // Select everything
+            SendKeys.SendWait("{DEL}"); // Delete selection
+            SendKeys.SendWait("test"); // Type new text
+
+            passInput.SetFocus();
+            SendKeys.SendWait("^{HOME}");
+            SendKeys.SendWait("^+{END}"); // Select everything
+            SendKeys.SendWait("{DEL}"); // Delete selection
+            SendKeys.SendWait("test"); // Type new text
+
+            loginButton.SetFocus();
+            SendKeys.SendWait("{ENTER}"); // Press Enter key
+        }
+    });
+
 
 Console.ReadLine();
+return;
 
-delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hwnd,
-    int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
+Process? GetQuikProcess()
+{
+    var processes = Process.GetProcesses();
+    foreach (var p in processes)
+    {
+        if (p.MainWindowTitle.Contains("QUIK"))
+        {
+            return p;
+        }
+    }
+
+    return null;
+}
