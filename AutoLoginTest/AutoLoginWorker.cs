@@ -5,6 +5,10 @@ using Microsoft.Extensions.Logging;
 
 namespace AutoLoginTest;
 
+/// <summary>
+/// Воркер автоматического входа в QUIK. Отслеживает появление окон входа в систему QUIK и автоматически 
+/// заполняет поля логина и пароля, а затем выполняет вход в систему.
+/// </summary>
 public class AutoLoginWorker : IHostedService
 {
     private readonly ILogger<AutoLoginWorker> _logger;
